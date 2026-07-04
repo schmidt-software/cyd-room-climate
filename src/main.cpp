@@ -2,6 +2,7 @@
 #include <SPI.h>
 #include <Wire.h>
 #include <Preferences.h>
+#include <SD.h>
 #include <TFT_eSPI.h>
 #include <XPT2046_Touchscreen.h>
 #include <math.h>
@@ -26,6 +27,15 @@
 // no real calibration is required for that.
 #define TOUCH_RAW_MID 2048
 
+// The CYD's microSD slot. It shares SPI usage with the touch controller:
+// the bus is re-pointed to the SD pins for each card access and back to
+// the touch pins afterwards (see beginSd/endSd).
+#define SD_CS 5
+#define SD_SCK 18
+#define SD_MISO 19
+#define SD_MOSI 23
+#define SETTINGS_PATH "/settings.txt"
+
 // Onboard I2C connector of the CYD (JST connector CN1: GND, IO22, IO27, 3V3),
 // used for the BME680 sensor. See README, "Connecting the BME680".
 #define I2C_SDA 27
@@ -33,16 +43,31 @@
 
 // Rough air-quality classification based on gas resistance (kOhm).
 // Not a calibrated IAQ index (that would require the Bosch BSEC library),
-// but good enough for a coarse good/medium/poor indicator.
+// but good enough for a coarse good/medium/poor indicator. These are the
+// defaults; they can be overridden via the SD card settings file.
 #define GAS_GOOD_KOHM 50.0f
 #define GAS_MODERATE_KOHM 20.0f
 
+// Default measurement interval; overridable via the SD card settings file.
 #define MEASURE_INTERVAL_MS 2000
 
 // Selectable dashboard designs. Tapping the touchscreen switches between
 // them; the selection is stored in NVS and survives reboots.
 enum : uint8_t { DESIGN_LCARS = 0, DESIGN_TILES, DESIGN_TERM, DESIGN_BAUHAUS, DESIGN_COUNT };
 const char *DESIGN_NAMES[DESIGN_COUNT] = {"LCARS", "TILES", "TERMINAL", "BAUHAUS"};
+
+// Runtime settings with their defaults. A settings.txt on the microSD card
+// overrides them at boot and is rewritten whenever a setting changes on the
+// device; without a card the design keeps persisting in NVS only.
+struct Settings {
+  uint8_t design = DESIGN_LCARS;
+  uint32_t intervalMs = MEASURE_INTERVAL_MS;
+  bool touchSwap = false; // swaps the left/right tap direction
+  float gasGoodKohm = GAS_GOOD_KOHM;
+  float gasModerateKohm = GAS_MODERATE_KOHM;
+};
+Settings settings;
+bool sdAvailable = false;
 
 struct Readings {
   float tempC;
@@ -75,6 +100,116 @@ uint16_t COL_BG, COL_ORANGE, COL_LILAC, COL_PEACH, COL_PALEBLUE, COL_TAN,
     COL_BAU_BG, COL_BAU_RED, COL_BAU_BLUE, COL_BAU_YELLOW;
 
 // ---------------------------------------------------------------------------
+// Settings on the microSD card
+// ---------------------------------------------------------------------------
+
+// Points the shared SPI bus at the SD card. Note there is deliberately no
+// SPIClass::end() anywhere: re-running begin() only re-routes the pins via
+// the GPIO matrix (ending the bus could disturb other peripherals), and the
+// idle chip-select lines keep the momentarily unused device quiet.
+bool beginSd() {
+  touchSpi.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
+  if (!SD.begin(SD_CS, touchSpi)) {
+    touchSpi.begin(TOUCH_CLK, TOUCH_MISO, TOUCH_MOSI, TOUCH_CS);
+    return false;
+  }
+  return true;
+}
+
+// Releases the card and routes the SPI bus back to the touch controller.
+void endSd() {
+  SD.end();
+  touchSpi.begin(TOUCH_CLK, TOUCH_MISO, TOUCH_MOSI, TOUCH_CS);
+}
+
+uint8_t designFromName(String name) {
+  name.trim();
+  for (uint8_t i = 0; i < DESIGN_COUNT; i++) {
+    if (name.equalsIgnoreCase(DESIGN_NAMES[i])) return i;
+  }
+  return DESIGN_COUNT; // not a valid design name
+}
+
+// Applies one key=value pair; unknown keys and out-of-range values are
+// ignored so a hand-edited file cannot break the dashboard.
+void applySetting(const String &key, const String &value) {
+  if (key == "design") {
+    uint8_t d = designFromName(value);
+    if (d < DESIGN_COUNT) settings.design = d;
+  } else if (key == "interval_ms") {
+    long v = value.toInt();
+    if (v >= 500 && v <= 3600000L) settings.intervalMs = (uint32_t)v;
+  } else if (key == "touch_swap") {
+    settings.touchSwap = value.toInt() != 0;
+  } else if (key == "gas_good_kohm") {
+    float v = value.toFloat();
+    if (v > 0) settings.gasGoodKohm = v;
+  } else if (key == "gas_moderate_kohm") {
+    float v = value.toFloat();
+    if (v > 0) settings.gasModerateKohm = v;
+  }
+}
+
+// Reads SETTINGS_PATH from the SD card. Returns true if the file existed
+// and was read; sets sdAvailable when a card is mounted.
+bool loadSettingsFromSd() {
+  if (!beginSd()) {
+    Serial.println("SD: no card detected, settings persist in NVS only");
+    return false;
+  }
+  sdAvailable = true;
+  File f = SD.open(SETTINGS_PATH, FILE_READ);
+  if (!f) {
+    endSd();
+    Serial.println("SD: no settings file yet");
+    return false;
+  }
+  while (f.available()) {
+    String line = f.readStringUntil('\n');
+    line.trim();
+    if (line.length() == 0 || line.startsWith("#")) continue;
+    int eq = line.indexOf('=');
+    if (eq <= 0) continue;
+    String key = line.substring(0, eq);
+    String value = line.substring(eq + 1);
+    key.trim();
+    key.toLowerCase();
+    value.trim();
+    applySetting(key, value);
+  }
+  f.close();
+  endSd();
+  Serial.println("SD: settings loaded");
+  return true;
+}
+
+// Writes the current settings back to the card as a full rewrite, keeping
+// the file self-documenting. Returns false if no card is available.
+bool saveSettingsToSd() {
+  if (!sdAvailable || !beginSd()) return false;
+  File f = SD.open(SETTINGS_PATH, FILE_WRITE); // "w" mode: truncates
+  if (!f) {
+    endSd();
+    return false;
+  }
+  String designName = DESIGN_NAMES[settings.design];
+  designName.toLowerCase();
+  f.println("# CYD room climate settings");
+  f.println("# design: lcars | tiles | terminal | bauhaus");
+  f.println("# interval_ms: measurement interval in ms (500-3600000)");
+  f.println("# touch_swap: 1 swaps the left/right tap direction");
+  f.println("# gas_*_kohm: air-quality thresholds (gas resistance)");
+  f.printf("design=%s\n", designName.c_str());
+  f.printf("interval_ms=%lu\n", (unsigned long)settings.intervalMs);
+  f.printf("touch_swap=%d\n", settings.touchSwap ? 1 : 0);
+  f.printf("gas_good_kohm=%.1f\n", settings.gasGoodKohm);
+  f.printf("gas_moderate_kohm=%.1f\n", settings.gasModerateKohm);
+  f.close();
+  endSd();
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // Shared helpers (status colors, air quality, degree symbol)
 // ---------------------------------------------------------------------------
 
@@ -91,11 +226,11 @@ uint16_t humidityColor(float humidity) {
 }
 
 const char *airQualityLabel(float gasKOhm, uint16_t &color) {
-  if (gasKOhm >= GAS_GOOD_KOHM) {
+  if (gasKOhm >= settings.gasGoodKohm) {
     color = COL_AQ_GOOD;
     return "GUT";
   }
-  if (gasKOhm >= GAS_MODERATE_KOHM) {
+  if (gasKOhm >= settings.gasModerateKohm) {
     color = COL_AQ_MID;
     return "MITTEL";
   }
@@ -461,8 +596,8 @@ BauCell bauAQ = {162, 140, 158, 100};
 // Air-quality status color from the fixed primary palette:
 // blue=good, yellow=medium, red=poor.
 uint16_t bauhausAqColor(float gasKOhm) {
-  if (gasKOhm >= GAS_GOOD_KOHM) return COL_BAU_BLUE;
-  if (gasKOhm >= GAS_MODERATE_KOHM) return COL_BAU_YELLOW;
+  if (gasKOhm >= settings.gasGoodKohm) return COL_BAU_BLUE;
+  if (gasKOhm >= settings.gasModerateKohm) return COL_BAU_YELLOW;
   return COL_BAU_RED;
 }
 
@@ -618,6 +753,10 @@ void drawReadings(const Readings &rd) {
 void switchDesign(int8_t step) {
   currentDesign = (currentDesign + DESIGN_COUNT + step) % DESIGN_COUNT;
   prefs.putUChar("design", currentDesign);
+  settings.design = currentDesign;
+  if (saveSettingsToSd()) {
+    Serial.println("SD: settings saved");
+  }
   drawStaticLayout();
   // Redraw the last readings immediately instead of waiting for the interval.
   if (hasReading) {
@@ -712,6 +851,16 @@ void setup() {
     currentDesign = DESIGN_LCARS;
   }
 
+  // Settings from the SD card take precedence over NVS. If a card is
+  // present but has no settings file yet, create one as an editable
+  // template reflecting the current state.
+  settings.design = currentDesign;
+  if (loadSettingsFromSd()) {
+    currentDesign = settings.design;
+  } else if (sdAvailable) {
+    saveSettingsToSd();
+  }
+
   drawStaticLayout();
 
 #ifdef SIMULATE_SENSOR
@@ -748,7 +897,11 @@ void loop() {
   // value, hence the comparison against the range midpoint, not pixels).
   if (touch.touched()) {
     TS_Point p = touch.getPoint();
-    switchDesign(p.x >= TOUCH_RAW_MID ? +1 : -1);
+    int8_t step = (p.x >= TOUCH_RAW_MID) ? +1 : -1;
+    if (settings.touchSwap) {
+      step = -step;
+    }
+    switchDesign(step);
     // Wait until the finger is lifted, otherwise designs would rattle through.
     while (touch.touched()) {
       delay(10);
@@ -758,7 +911,7 @@ void loop() {
   }
 
   unsigned long now = millis();
-  if (!hasReading || now - lastMeasurement >= MEASURE_INTERVAL_MS) {
+  if (!hasReading || now - lastMeasurement >= settings.intervalMs) {
     lastMeasurement = now;
     measureAndShow();
   }
