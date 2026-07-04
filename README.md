@@ -1,117 +1,124 @@
-# CYD Raumklima
+# CYD Room Climate
 
-PlatformIO-Projekt fuer den ESP32 Cheap Yellow Display (ESP32-2432S028R),
-**USB-C-Variante** mit resistivem Touchscreen.
-Misst Temperatur, Luftfeuchte, Luftdruck und bewertet die Luftqualitaet ueber
-einen BME680-Sensor. Tippen auf die rechte Displayhaelfte wechselt zum
-naechsten, auf die linke zum vorherigen der vier Designs (LCARS, Kacheln,
-Terminal, Bauhaus); die Auswahl bleibt auch nach einem Neustart erhalten.
+PlatformIO project for the ESP32 Cheap Yellow Display (ESP32-2432S028R)
+with a resistive touchscreen. Measures temperature, humidity and barometric
+pressure and rates air quality using a BME680 sensor. Tapping the right half
+of the display switches to the next of four designs (LCARS, Tiles, Terminal,
+Bauhaus), tapping the left half to the previous one; the selection persists
+across reboots.
 
-## Voraussetzungen
+Note: the on-screen UI labels are in German (RAUMKLIMA = room climate,
+FEUCHT(E) = humidity, DRUCK = pressure, LUFTQ/LUFTGUETE = air quality,
+GUT/MITTEL/SCHLECHT = good/medium/poor).
 
-- VS Code mit der Erweiterung **PlatformIO IDE**
-- CYD-Board per USB-C mit dem Rechner verbunden
-- Ggf. CH340/CP2102 USB-Treiber installiert, falls das Board nicht erkannt wird
-- **BME680-Breakout** (z. B. Adafruit, DFRobot oder generisches "GY-BME680"), angeschlossen an den
-  onboard JST-Stecker **CN1** des CYD (Details siehe Abschnitt "BME680 anschliessen")
+## Requirements
 
-## Simulationsmodus (ohne Sensor)
+- VS Code with the **PlatformIO IDE** extension
+- CYD board connected via USB
+- CH340/CP2102 USB driver installed if the board is not detected
+- **BME680 breakout** (e.g. Adafruit, DFRobot or a generic "GY-BME680"),
+  connected to the onboard JST connector **CN1** (see "Connecting the BME680")
 
-Solange der BME680 noch nicht angeschlossen ist, erzeugt das Programm dank des Build-Flags
-`-DSIMULATE_SENSOR=1` in `platformio.ini` Fantasiewerte, die sich langsam veraendern
-(die Luftqualitaet durchlaeuft dabei absichtlich Gut/Mittel/Schlecht). So laesst sich das
-Dashboard-Layout schon jetzt auf dem echten Display pruefen. Oben rechts erscheint dazu der
-Hinweis "SIMULATION". **Sobald der Sensor angeschlossen ist**, die Zeile `-DSIMULATE_SENSOR=1`
-in `platformio.ini` entfernen und neu flashen, um echte Messwerte zu erhalten.
+## Simulation mode (without a sensor)
 
-## Verwendung
+As long as no BME680 is attached, the build flag `-DSIMULATE_SENSOR=1` in
+`platformio.ini` makes the program generate slowly drifting fake values (the
+air quality deliberately cycles through good/medium/poor). This lets you
+check the dashboard layout on the real display right away; a "SIM" badge is
+shown on screen. **Once the sensor is connected**, remove the
+`-DSIMULATE_SENSOR=1` line from `platformio.ini` and reflash to get real
+readings.
 
-1. Diesen Ordner in VS Code oeffnen (PlatformIO erkennt ihn automatisch als Projekt).
-2. BME680 gemaess obiger Pinbelegung an das CYD anschliessen.
-3. Unten in der PlatformIO-Statusleiste auf **Upload** klicken (oder `pio run --target upload` im Terminal).
-4. PlatformIO laedt automatisch Toolchain und Bibliotheken (TFT_eSPI, XPT2046_Touchscreen, Adafruit BME680) herunter, kompiliert und flasht den ESP32.
-5. Nach dem Flashen zeigt das Display Temperatur, Luftfeuchte, Luftdruck und eine Luftqualitaets-Einschaetzung (Gut/Mittel/Schlecht), alle 2 Sekunden aktualisiert. Tippen rechts wechselt zum naechsten, links zum vorherigen Design. Werte werden zusaetzlich ueber den seriellen Monitor ausgegeben (115200 Baud).
+## Usage
+
+1. Open this folder in VS Code (PlatformIO picks it up as a project automatically).
+2. Connect the BME680 as described below.
+3. Click **Upload** in the PlatformIO status bar (or run `pio run --target upload` in a terminal).
+4. PlatformIO automatically downloads the toolchain and libraries (TFT_eSPI, XPT2046_Touchscreen, Adafruit BME680), compiles and flashes the ESP32.
+5. After flashing, the display shows temperature, humidity, pressure and an air-quality rating (good/medium/poor), refreshed every 2 seconds. Tap right for the next design, left for the previous one. Readings are also printed to the serial monitor (115200 baud).
 
 ## Designs
 
-Tippen auf die rechte Displayhaelfte wechselt zyklisch zum naechsten Design,
-Tippen auf die linke Haelfte zum vorherigen. Die Auswahl wird im NVS
-(Preferences) gespeichert und beim naechsten Start wiederhergestellt.
+Tapping the right half of the display cycles to the next design, tapping the
+left half to the previous one. The selection is stored in NVS (Preferences)
+and restored on the next boot.
 
-1. **LCARS** — Star-Trek-Computerinterface: Elbow, Seitenleiste und
-   Readout-Zeilen in warmen Orange-/Lilatoenen auf Schwarz. Schrift:
-   Antonio Bold (kondensiert, SIL-OFL-lizenziert) als freier Ersatz fuer
-   das LCARS-Original "Swiss 911 Ultra Compressed", eingebettet als
-   generierte GFX-Fonts in `src/fonts_antonio.h`.
-2. **Kacheln** — modernes Dashboard: 2x2-Grid dunkler Kacheln mit grossen,
-   nach Status eingefaerbten Werten.
-3. **Terminal** — Retro-Konsole: monochrom-gruene Monospace-Anzeige mit
-   invertierter Kopfzeile.
-4. **Bauhaus** — Grundformen in Primaerfarben auf Papierweiss: Kreis (Blau),
-   Quadrat (Rot) und Dreieck (Gelb) nach Kandinsky, 2x2-Raster mit kraeftigen
-   schwarzen Linien; die Luftguete zeigt ein eigenstaendiges viertes Symbol,
-   einen Halbkreis, der die Farbe mit dem Messwert wechselt
-   (Blau=gut, Gelb=mittel, Rot=schlecht). Er erscheint gross in der
-   Luftguete-Zelle und klein in der Kopfzeile neben den drei Grundformen.
+1. **LCARS** — Star Trek computer interface: elbow, sidebar and readout
+   rows in warm orange/lilac tones on black. Typeface: Antonio Bold
+   (condensed, SIL-OFL licensed) as a free substitute for the original
+   LCARS font "Swiss 911 Ultra Compressed", embedded as generated GFX
+   fonts in `src/fonts_antonio.h`. The elbow carries a Starfleet delta
+   silhouette.
+2. **Tiles** — modern dashboard: a 2x2 grid of dark tiles with large,
+   status-colored values.
+3. **Terminal** — retro console: monochrome green monospace output with an
+   inverted header line.
+4. **Bauhaus** — basic shapes in primary colors on paper white: circle
+   (blue), square (red) and triangle (yellow) after Kandinsky, in a 2x2
+   grid with bold black lines; the air quality uses a distinct fourth
+   symbol, a half circle, which changes color with the reading
+   (blue=good, yellow=medium, red=poor). It appears large in the
+   air-quality cell and small in the header next to the three basic shapes.
 
-## Hardware-Details
+## Hardware details
 
-- **Display**: ST7789-Panel-Variante des CYD (`ST7789_DRIVER` mit
-  `TFT_RGB_ORDER=TFT_RGB` und `TFT_INVERSION_OFF` in `platformio.ini`).
-  Andere CYD-Chargen haben ein ILI9341-Panel und brauchen stattdessen
-  `ILI9341_DRIVER` bzw. `ILI9341_2_DRIVER`.
-- **Touch**: XPT2046 (resistiv) am eigenen SPI-Bus — CLK=25, CS=33, MOSI=32, MISO=39, IRQ=36.
-- **Sensor**: Bosch BME680 (I2C) — Temperatur, rel. Luftfeuchte, Luftdruck, Gaswiderstand.
-  Adresse wird automatisch erkannt (0x76 oder 0x77).
+- **Display**: ST7789 panel variant of the CYD (`ST7789_DRIVER` with
+  `TFT_RGB_ORDER=TFT_BGR` and `TFT_INVERSION_OFF` in `platformio.ini`).
+  Other CYD batches ship with an ILI9341 panel and need `ILI9341_DRIVER`
+  or `ILI9341_2_DRIVER` instead.
+- **Touch**: XPT2046 (resistive) on its own SPI bus — CLK=25, CS=33, MOSI=32, MISO=39, IRQ=36.
+- **Sensor**: Bosch BME680 (I2C) — temperature, relative humidity, pressure, gas resistance.
+  The address is detected automatically (0x76 or 0x77).
 
-## Breakout-Anschluesse des CYD
+## CYD breakout connectors
 
-Auf der Rueckseite des Boards sitzen vier JST-Stecker (1,25 mm Rastermass):
+The back of the board has four JST connectors (1.25 mm pitch):
 
-| Stecker | Pins | Zweck |
-|---------|------|-------|
-| P1 | VIN, TX, RX, GND | Seriell / Stromversorgung |
-| **CN1** | GND, GPIO 22, GPIO 27, 3.3V | **I2C-Anschluss (hier: BME680)** |
-| P3 | GND, GPIO 35, GPIO 22, GPIO 21 | Zusatz-IO (GPIO 35 nur Eingang) |
-| P4 / SPEAK | Lautsprecher-Ausgang (GPIO 26 ueber Verstaerker) | Audio |
+| Connector | Pins | Purpose |
+|-----------|------|---------|
+| P1 | VIN, TX, RX, GND | Serial / power |
+| **CN1** | GND, GPIO 22, GPIO 27, 3.3V | **I2C connector (used here: BME680)** |
+| P3 | GND, GPIO 35, GPIO 22, GPIO 21 | Extra IO (GPIO 35 is input-only) |
+| P4 / SPEAK | Speaker output (GPIO 26 via amplifier) | Audio |
 
-Weitere fest belegte Pins: microSD-Slot (GPIO 5/18/19/23), RGB-LED
-(GPIO 4/16/17), Helligkeitssensor/LDR (GPIO 34), Display und Touch (siehe
-[offizielle PINS.md](https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display/blob/main/PINS.md)).
-Frei nutzbar sind damit im Wesentlichen nur die Pins der Stecker CN1 und P3.
+Other permanently assigned pins: microSD slot (GPIO 5/18/19/23), RGB LED
+(GPIO 4/16/17), light sensor/LDR (GPIO 34), display and touch (see the
+[official PINS.md](https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display/blob/main/PINS.md)).
+In practice only the pins on CN1 and P3 are freely usable.
 
-## BME680 anschliessen
+## Connecting the BME680
 
-Der Sensor kommt an den Stecker **CN1** (die Pin-Reihenfolge vorsichtshalber
-mit dem Platinenaufdruck abgleichen):
+The sensor connects to the **CN1** connector (double-check the pin order
+against the silkscreen on the board):
 
-| CN1-Pin | Signal | BME680-Breakout |
+| CN1 pin | Signal | BME680 breakout |
 |---------|--------|-----------------|
 | 1 | GND | GND |
-| 2 | GPIO 22 (SCL) | SCL (bei Adafruit: SCK) |
-| 3 | GPIO 27 (SDA) | SDA (bei Adafruit: SDI) |
+| 2 | GPIO 22 (SCL) | SCL (Adafruit: SCK) |
+| 3 | GPIO 27 (SDA) | SDA (Adafruit: SDI) |
 | 4 | 3.3V | VCC / VIN |
 
-- **CS und SDO** am Breakout fuer I2C-Betrieb frei lassen. SDO bestimmt die
-  I2C-Adresse (offen/GND = 0x76, an VCC = 0x77) - die Firmware probiert beim
-  Start automatisch beide.
-- Der BME680 laeuft mit 3,3 V direkt vom CN1-Pin 4; die gaengigen Breakouts
-  (Adafruit, GY-BME680) haben zusaetzlich einen eigenen Spannungsregler und
-  vertragen daher auch 5 V - noetig ist das hier nicht.
-- Nach dem Anschliessen die Zeile `-DSIMULATE_SENSOR=1` in `platformio.ini`
-  entfernen und neu flashen: Die Anzeige wechselt von "SIM" auf "LIVE" und
-  zeigt echte Messwerte.
+- Leave **CS and SDO** on the breakout unconnected for I2C operation. SDO
+  selects the I2C address (open/GND = 0x76, tied to VCC = 0x77) - the
+  firmware automatically tries both at startup.
+- The BME680 runs directly off the 3.3 V from CN1 pin 4; the common
+  breakouts (Adafruit, GY-BME680) additionally have their own voltage
+  regulator and therefore tolerate 5 V as well - not needed here.
+- After wiring, remove the `-DSIMULATE_SENSOR=1` line from
+  `platformio.ini` and reflash: the badge switches from "SIM" to "LIVE"
+  and real readings are shown.
 
-## Hinweis zur Luftqualitaet
+## Note on air quality
 
-Die Anzeige "Gut/Mittel/Schlecht" basiert auf einer einfachen Schwellwert-Einteilung
-des rohen Gaswiderstands (kOhm) und ist **kein kalibrierter IAQ-Index**. Fuer eine
-praezisere, kalibrierte Bewertung (inkl. Einbrennzeit und Baseline-Tracking) kann
-spaeter die Bosch-BSEC-Bibliothek ergaenzt werden.
+The good/medium/poor rating is a simple threshold classification of the raw
+gas resistance (kOhm) and is **not a calibrated IAQ index**. For a more
+precise, calibrated rating (including burn-in and baseline tracking) the
+Bosch BSEC library can be added later.
 
-## Falls es nicht passt
+## Troubleshooting
 
-- **Farben invertiert/falsch**: je nach Panel-Variante in `platformio.ini` den Treiber wechseln (`ST7789_DRIVER`, `ILI9341_DRIVER` oder `ILI9341_2_DRIVER`); bei vertauschtem Rot/Blau zusaetzlich `TFT_RGB_ORDER` zwischen `TFT_RGB` und `TFT_BGR` umstellen.
-- **Touch spiegelverkehrt oder versetzt**: `touch.setRotation(...)` in `src/main.cpp` anpassen. Sind dadurch links/rechts beim Designwechsel vertauscht, alternativ einfach das Vorzeichen beim `switchDesign(...)`-Aufruf in `loop()` tauschen.
-- **Anderes Pinout**: Pin-Zuordnung anhand der [offiziellen PINS.md](https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display/blob/main/PINS.md) pruefen.
-- **Board wird nicht erkannt**: passenden USB-Treiber (CH340 oder CP2102, je nach verbautem Chip) installieren.
+- **Colors inverted/wrong**: switch the driver in `platformio.ini` depending on the panel variant (`ST7789_DRIVER`, `ILI9341_DRIVER` or `ILI9341_2_DRIVER`); if red and blue are swapped, also toggle `TFT_RGB_ORDER` between `TFT_RGB` and `TFT_BGR`.
+- **Touch mirrored or offset**: adjust `touch.setRotation(...)` in `src/main.cpp`. If that swaps left/right for design switching, simply flip the sign in the `switchDesign(...)` call in `loop()`.
+- **Different pinout**: check the pin mapping against the [official PINS.md](https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display/blob/main/PINS.md).
+- **Board not detected**: install the matching USB driver (CH340 or CP2102, depending on the chip on the board).
+- **Upload aborts** ("Serial data stream stopped"): the CH340 on the CYD is unreliable at 921600 baud; this project therefore uses `upload_speed = 460800`.

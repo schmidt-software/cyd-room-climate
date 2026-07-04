@@ -1,7 +1,7 @@
-// LCARS-Fonts: Antonio Bold (SIL Open Font License 1.1),
+// LCARS fonts: Antonio Bold (SIL Open Font License 1.1),
 // https://github.com/vernnobile/antonioFont
-// Konvertiert im Adafruit-GFX-Format (fontconvert-Portierung, 141 DPI).
-// Kondensierte Schrift als freier Ersatz fuer das LCARS-Original
+// Converted to the Adafruit GFX format (fontconvert port, 141 DPI).
+// Condensed typeface as a free substitute for the original LCARS font
 // 'Swiss 911 Ultra Compressed'.
 #pragma once
 

@@ -5,44 +5,44 @@
 #include <TFT_eSPI.h>
 #include <XPT2046_Touchscreen.h>
 #include <math.h>
-// FreeSans*-/FreeMono*-Fonts sind bereits ueber LOAD_GFXFF in TFT_eSPI.h eingebunden.
-// Antonio Bold (kondensiert) fuer das LCARS-Design, generiert aus der TTF.
+// The FreeSans*/FreeMono* fonts are already pulled in via LOAD_GFXFF in TFT_eSPI.h.
+// Antonio Bold (condensed) for the LCARS design, generated from the TTF.
 #include "fonts_antonio.h"
 #ifndef SIMULATE_SENSOR
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME680.h>
 #endif
 
-// Der XPT2046-Touchcontroller haengt beim CYD an einem eigenen SPI-Bus,
-// getrennt vom Display (siehe PINS.md im CYD-Repo).
+// On the CYD the XPT2046 touch controller sits on its own SPI bus,
+// separate from the display (see PINS.md in the CYD repo).
 #define TOUCH_CLK 25
 #define TOUCH_CS 33
 #define TOUCH_MOSI 32
 #define TOUCH_MISO 39
 #define TOUCH_IRQ 36
 
-// Der XPT2046 liefert Rohwerte (ca. 200-3900). Fuer die Unterscheidung
-// linke/rechte Displayhaelfte reicht die Bereichsmitte, eine echte
-// Kalibrierung ist dafuer nicht noetig.
+// The XPT2046 reports raw values (roughly 200-3900). Distinguishing the
+// left from the right half of the display only needs the range midpoint;
+// no real calibration is required for that.
 #define TOUCH_RAW_MID 2048
 
-// Onboard-I2C-Anschluss des CYD (JST-Stecker CN1: GND, IO22, IO27, 3V3),
-// fuer den BME680-Sensor. Verkabelung siehe README, "BME680 anschliessen".
+// Onboard I2C connector of the CYD (JST connector CN1: GND, IO22, IO27, 3V3),
+// used for the BME680 sensor. See README, "Connecting the BME680".
 #define I2C_SDA 27
 #define I2C_SCL 22
 
-// Grobe Einordnung der Luftqualitaet anhand des Gaswiderstands (kOhm).
-// Kein kalibrierter IAQ-Index (dafuer waere die Bosch-BSEC-Bibliothek noetig),
-// aber fuer eine grobe "gut/mittel/schlecht"-Anzeige ausreichend.
+// Rough air-quality classification based on gas resistance (kOhm).
+// Not a calibrated IAQ index (that would require the Bosch BSEC library),
+// but good enough for a coarse good/medium/poor indicator.
 #define GAS_GOOD_KOHM 50.0f
 #define GAS_MODERATE_KOHM 20.0f
 
 #define MEASURE_INTERVAL_MS 2000
 
-// Drei umschaltbare Designs. Antippen des Touchscreens wechselt zum
-// naechsten; die Auswahl wird im NVS gespeichert und ueberlebt Neustarts.
+// Selectable dashboard designs. Tapping the touchscreen switches between
+// them; the selection is stored in NVS and survives reboots.
 enum : uint8_t { DESIGN_LCARS = 0, DESIGN_TILES, DESIGN_TERM, DESIGN_BAUHAUS, DESIGN_COUNT };
-const char *DESIGN_NAMES[DESIGN_COUNT] = {"LCARS", "KACHELN", "TERMINAL", "BAUHAUS"};
+const char *DESIGN_NAMES[DESIGN_COUNT] = {"LCARS", "TILES", "TERMINAL", "BAUHAUS"};
 
 struct Readings {
   float tempC;
@@ -64,9 +64,9 @@ Readings lastReading;
 bool hasReading = false;
 unsigned long lastMeasurement = 0;
 
-// Farbpalette; Werte werden einmalig in setup() via color565 befuellt.
-// LCARS (Star-Trek-Computerinterface): schwarzer Hintergrund, warme
-// Orange-/Lilatoene. Dazu Farben fuer das Kachel- und das Terminal-Design.
+// Color palette; values are filled once in setup() via color565.
+// LCARS (Star Trek computer interface): black background with warm
+// orange/lilac tones. Plus colors for the tiles and terminal designs.
 uint16_t COL_BG, COL_ORANGE, COL_LILAC, COL_PEACH, COL_PALEBLUE, COL_TAN,
     COL_BLACK_TEXT, COL_MUTED, COL_READOUT, COL_COOL, COL_GOOD, COL_WARN,
     COL_AQ_GOOD, COL_AQ_MID, COL_AQ_BAD,
@@ -75,7 +75,7 @@ uint16_t COL_BG, COL_ORANGE, COL_LILAC, COL_PEACH, COL_PALEBLUE, COL_TAN,
     COL_BAU_BG, COL_BAU_RED, COL_BAU_BLUE, COL_BAU_YELLOW;
 
 // ---------------------------------------------------------------------------
-// Gemeinsame Helfer (Statusfarben, Luftqualitaet, Gradzeichen)
+// Shared helpers (status colors, air quality, degree symbol)
 // ---------------------------------------------------------------------------
 
 uint16_t temperatureColor(float tempC) {
@@ -103,10 +103,10 @@ const char *airQualityLabel(float gasKOhm, uint16_t &color) {
   return "SCHLECHT";
 }
 
-// "C" alleine waere die falsche Einheit - "C" ist nicht "Grad Celsius".
-// Die GFX-Fonts kennen aber kein Gradzeichen (nur ASCII 0x20-0x7E), daher
-// wird es als kleiner hochgestellter Kreis vor dem "C" gezeichnet.
-// anchorX/anchorY: MR-Anker (rechtsbuendig, vertikal mittig) fuer das "C".
+// A bare "C" would be the wrong unit - "C" is not "degrees Celsius".
+// The GFX fonts only cover ASCII 0x20-0x7E and have no degree sign, so it
+// is drawn by hand as a small raised circle in front of the "C".
+// anchorX/anchorY: MR anchor (right-aligned, vertically centered) for the "C".
 void drawDegreeCSuffix(int16_t anchorX, int16_t anchorY, uint16_t color, uint16_t bg,
                        const GFXfont *font) {
   tft.setTextDatum(MR_DATUM);
@@ -128,19 +128,18 @@ struct Row {
   int16_t x, y, w, h;
 };
 
-// Vier LCARS-Readout-Zeilen im Inhaltsbereich rechts der Seitenleiste.
+// Four LCARS readout rows in the content area right of the sidebar.
 Row rowTemp = {64, 68, 252, 36};
 Row rowHum = {64, 112, 252, 36};
 Row rowPress = {64, 156, 252, 36};
 Row rowAQ = {64, 200, 252, 36};
 
-// Sternenflotten-Delta als Silhouette, dem Original nachempfunden.
-// Die Kontur wird zeilenweise aus zwei Kurven aufgebaut: aussen die
-// geschwungene Flanke von der schmalen Spitze zu den Fluegelspitzen
-// (x waechst mit Exponent 1.35, dadurch oben schlank und unten
-// ausschwingend), innen ab ~60% Hoehe die konkave Kerbe (Exponent 0.45,
-// dadurch breit und flach ausgerundet). Zeilenweises Fuellen haelt die
-// duenn auslaufenden Fluegel lueckenlos geschlossen.
+// Starfleet delta drawn as a silhouette, modeled on the original insignia.
+// The outline is built row by row from two curves: the outer flank sweeps
+// from the narrow tip out to the wing tips (x grows with exponent 1.35,
+// keeping the top slender and the bottom flared), and from ~60% height the
+// inner concave notch cuts in (exponent 0.45, giving a wide, shallow
+// rounding). Row-wise filling keeps the thin trailing wings free of gaps.
 void drawStarfleetDelta(int16_t cx, int16_t top, int16_t w, int16_t h, uint16_t color) {
   float halfW = w / 2.0f;
   float notchY = 0.60f * h;
@@ -157,9 +156,8 @@ void drawStarfleetDelta(int16_t cx, int16_t top, int16_t w, int16_t h, uint16_t 
   }
 }
 
-// Zeichnet ein Rechteck, das nur links abgerundet ist (LCARS-Endstueck),
-// indem zunaechst eine volle Kapselform gezeichnet und die rechte Haelfte
-// anschliessend quadratisch uebermalt wird.
+// Draws a rectangle that is rounded on the left side only (LCARS end cap):
+// first a full capsule shape, then the right half is painted over square.
 void drawLeftCap(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color) {
   int16_t r = h / 2;
   tft.fillRoundRect(x, y, w, h, r, color);
@@ -176,8 +174,8 @@ void drawRowEndcap(const Row &r, const char *label, uint16_t color) {
   drawLeftCap(r.x, r.y, ROW_ENDCAP_W, r.h, color);
   tft.setTextDatum(MC_DATUM);
   tft.setFreeFont(&Antonio_Bold9pt7b);
-  // Transparent statt deckend: ein zu breites Label liefe sonst als
-  // farbiges Rechteck ueber den dunklen Messwert-Bereich rechts daneben.
+  // Transparent instead of opaque: an overly wide label would otherwise
+  // spill a colored rectangle over the dark value area to its right.
   tft.setTextColor(COL_BLACK_TEXT);
   tft.drawString(label, r.x + ROW_ENDCAP_W / 2, r.y + r.h / 2 + 1);
 }
@@ -212,13 +210,13 @@ void drawSidebarChip(int16_t y, const char *code, uint16_t color) {
 void drawStaticLcars() {
   tft.fillScreen(COL_BG);
 
-  // Elbow: die klassische LCARS-Eckverbindung oben links.
+  // Elbow: the classic LCARS corner sweep, top left.
   tft.fillRoundRect(4, 4, ELBOW_SIZE, ELBOW_SIZE, 18, COL_ORANGE);
 
-  // Sternenflotten-Delta als schwarze Silhouette im Elbow.
+  // Starfleet delta as a black silhouette inside the elbow.
   drawStarfleetDelta(32, 9, 36, 44, COL_BLACK_TEXT);
 
-  // Kopfleiste rechts vom Elbow.
+  // Header bar to the right of the elbow.
   tft.fillRoundRect(64, 4, 252, 26, 13, COL_ORANGE);
   tft.setTextDatum(ML_DATUM);
   tft.setFreeFont(&Antonio_Bold12pt7b);
@@ -228,7 +226,7 @@ void drawStaticLcars() {
   tft.setFreeFont(&Antonio_Bold9pt7b);
   tft.drawString("NCC-2432", 308, 17);
 
-  // Seitenleiste unterhalb des Elbows.
+  // Sidebar below the elbow.
   tft.fillRoundRect(4, 64, ELBOW_SIZE, 172, 18, COL_LILAC);
   drawSidebarChip(90, "07", COL_BG);
   drawSidebarChip(140, "41", COL_BG);
@@ -276,7 +274,7 @@ void drawReadingsLcars(const Readings &rd) {
 }
 
 // ---------------------------------------------------------------------------
-// Design 2: Kacheln - dunkles 2x2-Grid mit grossen Werten
+// Design 2: Tiles - dark 2x2 grid with large values
 // ---------------------------------------------------------------------------
 
 struct Tile {
@@ -296,8 +294,8 @@ void drawTileFrame(const Tile &t, const char *label) {
   tft.drawString(label, t.x + 10, t.y + 8);
 }
 
-// Loescht nur die Wertezone in der Kachelmitte; Label (oben) und
-// Einheit (unten rechts) bleiben stehen.
+// Clears only the value zone in the middle of the tile; the label (top)
+// and the unit (bottom right) stay in place.
 void drawTileValue(const Tile &t, const char *value, uint16_t color, const GFXfont *font) {
   tft.fillRect(t.x + 6, t.y + 26, t.w - 12, 44, COL_TILE);
   tft.setTextDatum(MC_DATUM);
@@ -361,14 +359,14 @@ void drawReadingsTiles(const Readings &rd) {
   uint16_t aqColor;
   const char *aqLabel = airQualityLabel(rd.gasKOhm, aqColor);
   drawTileValue(tileAQ, aqLabel, aqColor, &FreeSansBold12pt7b);
-  // Gaswiderstand ist dynamisch, daher eigene Loeschzone unten rechts.
+  // The gas resistance is dynamic, so it gets its own clear zone bottom right.
   tft.fillRect(tileAQ.x + 6, tileAQ.y + tileAQ.h - 26, tileAQ.w - 12, 20, COL_TILE);
   snprintf(buf, sizeof(buf), "%.0f kOhm", rd.gasKOhm);
   drawTileUnit(tileAQ, buf);
 }
 
 // ---------------------------------------------------------------------------
-// Design 3: Terminal - monochrom-gruene Retro-Konsole
+// Design 3: Terminal - monochrome green retro console
 // ---------------------------------------------------------------------------
 
 #define TERM_VALUE_X 145
@@ -396,7 +394,7 @@ void drawTermValue(int16_t y, const char *value, uint16_t color) {
 void drawStaticTerm() {
   tft.fillScreen(COL_BG);
 
-  // Invertierte Kopfzeile wie bei einem alten Datenterminal.
+  // Inverted header line like on an old data terminal.
   tft.fillRect(0, 0, 320, 24, COL_TERM_BRIGHT);
   tft.setTextDatum(ML_DATUM);
   tft.setFreeFont(&FreeMonoBold9pt7b);
@@ -422,7 +420,7 @@ void drawStaticTerm() {
 void drawReadingsTerm(const Readings &rd) {
   char buf[20];
 
-  // Temperatur: Wert, dann Gradkreis + "C" von Hand (Fonts sind ASCII-only).
+  // Temperature: value, then degree circle + "C" by hand (fonts are ASCII-only).
   snprintf(buf, sizeof(buf), "%.1f", rd.tempC);
   drawTermValue(TERM_ROW_TEMP, buf, COL_TERM_BRIGHT);
   int16_t w = tft.textWidth(buf);
@@ -445,32 +443,32 @@ void drawReadingsTerm(const Readings &rd) {
 }
 
 // ---------------------------------------------------------------------------
-// Design 4: Bauhaus - Grundformen in Primaerfarben auf Papierweiss,
-// getrennt durch kraeftige schwarze Rasterlinien. Formen-Farb-Zuordnung
-// nach Kandinsky: Kreis=Blau, Quadrat=Rot, Dreieck=Gelb.
+// Design 4: Bauhaus - primary-colored basic shapes on paper white,
+// separated by bold black grid lines. Shape/color mapping after
+// Kandinsky: circle=blue, square=red, triangle=yellow.
 // ---------------------------------------------------------------------------
 
 struct BauCell {
   int16_t x, y, w, h;
 };
 
-// 2x2-Raster; die Luecken dazwischen fuellen die 4px-Rasterlinien.
+// 2x2 grid; the gaps in between are filled by the 4px grid lines.
 BauCell bauTemp = {0, 40, 158, 96};
 BauCell bauHum = {162, 40, 158, 96};
 BauCell bauPress = {0, 140, 158, 100};
 BauCell bauAQ = {162, 140, 158, 100};
 
-// Statusfarbe der Luftguete aus der festen Primaerpalette:
-// Blau=gut, Gelb=mittel, Rot=schlecht.
+// Air-quality status color from the fixed primary palette:
+// blue=good, yellow=medium, red=poor.
 uint16_t bauhausAqColor(float gasKOhm) {
   if (gasKOhm >= GAS_GOOD_KOHM) return COL_BAU_BLUE;
   if (gasKOhm >= GAS_MODERATE_KOHM) return COL_BAU_YELLOW;
   return COL_BAU_RED;
 }
 
-// Halbkreis mit flacher Seite unten - das vierte Element im Formenkanon,
-// eigenstaendig neben Kreis, Quadrat und Dreieck. Gezeichnet als Vollkreis,
-// dessen untere Haelfte mit dem Hintergrund uebermalt wird (wie drawLeftCap).
+// Half circle with the flat side down - the fourth element of the shape
+// canon, distinct from circle, square and triangle. Drawn as a full circle
+// whose lower half is painted over with the background (like drawLeftCap).
 void drawBauHalfCircle(int16_t cx, int16_t baseY, int16_t r, uint16_t color) {
   tft.fillCircle(cx, baseY, r, color);
   tft.fillRect(cx - r, baseY + 1, 2 * r + 1, r + 1, COL_BAU_BG);
@@ -483,7 +481,7 @@ void drawBauLabel(const BauCell &c, const char *label) {
   tft.drawString(label, c.x + 40, c.y + 12);
 }
 
-// Loescht die Wertezone unterhalb von Form und Label.
+// Clears the value zone below shape and label.
 void clearBauValue(const BauCell &c) {
   tft.fillRect(c.x + 4, c.y + 34, c.w - 8, 58, COL_BAU_BG);
 }
@@ -495,9 +493,9 @@ void drawBauValue(const BauCell &c, const char *value, const GFXfont *font) {
   tft.drawString(value, c.x + 12, c.y + 62);
 }
 
-// Einheit klein hinter dem grossen Messwert; die y-Position ist so
-// gewaehlt, dass die Grundlinien von 24pt-Wert und 9pt-Einheit buendig
-// liegen. xStart ist der Abstand vom linken Zellenrand.
+// Small unit behind the large reading; the y position is chosen so the
+// baselines of the 24pt value and the 9pt unit line up. xStart is the
+// offset from the left cell edge.
 void drawBauUnit(const BauCell &c, int16_t xStart, const char *unit) {
   tft.setTextDatum(ML_DATUM);
   tft.setFreeFont(&FreeSansBold9pt7b);
@@ -508,15 +506,15 @@ void drawBauUnit(const BauCell &c, int16_t xStart, const char *unit) {
 void drawStaticBauhaus() {
   tft.fillScreen(COL_BAU_BG);
 
-  // Kopfzeile: Titel, die drei Grundformen, SIM/LIVE-Kennung.
+  // Header: title, the three basic shapes, SIM/LIVE marker.
   tft.setTextDatum(ML_DATUM);
   tft.setFreeFont(&FreeSansBold12pt7b);
   tft.setTextColor(COL_BLACK_TEXT, COL_BAU_BG);
   tft.drawString("RAUMKLIMA", 10, 18);
 
-  // Kreis, Quadrat, Dreieck; der vierte Platz rechts daneben gehoert dem
-  // Status-Halbkreis der Luftguete, der dynamisch in drawReadingsBauhaus
-  // gezeichnet wird.
+  // Circle, square, triangle; the fourth slot to their right belongs to
+  // the air-quality status half circle, drawn dynamically in
+  // drawReadingsBauhaus.
   tft.fillCircle(186, 18, 8, COL_BAU_BLUE);
   tft.fillRect(202, 10, 16, 16, COL_BAU_RED);
   tft.fillTriangle(226, 26, 242, 26, 234, 10, COL_BAU_YELLOW);
@@ -530,14 +528,14 @@ void drawStaticBauhaus() {
   tft.drawString("LIVE", 312, 19);
 #endif
 
-  // Rasterlinien.
+  // Grid lines.
   tft.fillRect(0, 36, 320, 4, COL_BLACK_TEXT);
   tft.fillRect(0, 136, 320, 4, COL_BLACK_TEXT);
   tft.fillRect(158, 40, 4, 200, COL_BLACK_TEXT);
 
-  // Formen und Labels der Zellen; der Status-Halbkreis der Luftguete-Zelle
-  // wird dynamisch in drawReadingsBauhaus gezeichnet.
-  // Kurzlabels, damit sie in 12pt neben die Formen passen.
+  // Shapes and labels of the cells; the status half circle of the
+  // air-quality cell is drawn dynamically in drawReadingsBauhaus.
+  // Short labels so they fit next to the shapes at 12pt.
   tft.fillRect(bauTemp.x + 10, bauTemp.y + 10, 24, 24, COL_BAU_RED);
   drawBauLabel(bauTemp, "TEMP");
 
@@ -558,8 +556,8 @@ void drawReadingsBauhaus(const Readings &rd) {
   clearBauValue(bauTemp);
   snprintf(buf, sizeof(buf), "%.1f", rd.tempC);
   drawBauValue(bauTemp, buf, &FreeSansBold24pt7b);
-  vw = tft.textWidth(buf); // Font ist noch der 24pt-Wertefont
-  // Gradkreis von Hand vor dem "C" (Fonts sind ASCII-only).
+  vw = tft.textWidth(buf); // font is still the 24pt value font
+  // Degree circle by hand in front of the "C" (fonts are ASCII-only).
   tft.drawCircle(bauTemp.x + 12 + vw + 9, bauTemp.y + 65, 2, COL_BLACK_TEXT);
   drawBauUnit(bauTemp, 12 + vw + 14, "C");
 
@@ -573,10 +571,10 @@ void drawReadingsBauhaus(const Readings &rd) {
   drawBauValue(bauPress, buf, &FreeSansBold24pt7b);
   drawBauUnit(bauPress, 12 + tft.textWidth(buf) + 8, "hPa");
 
-  // Status-Halbkreis der Luftguete wechselt die Farbe mit dem Messwert:
-  // einmal gross in der Zelle, einmal klein in der Kopfzeile als viertes
-  // Element neben den drei Grundformen. Der kleine nutzt r=8, damit die
-  // Uebermal-Zone des Helfers oberhalb der Rasterlinie (y=36) bleibt.
+  // The air-quality status half circle changes color with the reading:
+  // once large in the cell, once small in the header as the fourth element
+  // next to the three basic shapes. The small one uses r=8 so the helper's
+  // paint-over zone stays above the grid line at y=36.
   uint16_t aqCol = bauhausAqColor(rd.gasKOhm);
   tft.fillRect(bauAQ.x + 6, bauAQ.y + 8, 34, 28, COL_BAU_BG);
   drawBauHalfCircle(bauAQ.x + 22, bauAQ.y + 32, 14, aqCol);
@@ -595,7 +593,7 @@ void drawReadingsBauhaus(const Readings &rd) {
 }
 
 // ---------------------------------------------------------------------------
-// Design-Umschaltung und Messung
+// Design switching and measurement
 // ---------------------------------------------------------------------------
 
 void drawStaticLayout() {
@@ -616,22 +614,22 @@ void drawReadings(const Readings &rd) {
   }
 }
 
-// step = +1 (naechstes Design) oder -1 (vorheriges Design).
+// step = +1 (next design) or -1 (previous design).
 void switchDesign(int8_t step) {
   currentDesign = (currentDesign + DESIGN_COUNT + step) % DESIGN_COUNT;
   prefs.putUChar("design", currentDesign);
   drawStaticLayout();
-  // Letzte Messwerte sofort wieder anzeigen statt auf das Intervall zu warten.
+  // Redraw the last readings immediately instead of waiting for the interval.
   if (hasReading) {
     drawReadings(lastReading);
   }
-  Serial.printf("Design gewechselt: %s\n", DESIGN_NAMES[currentDesign]);
+  Serial.printf("Design switched: %s\n", DESIGN_NAMES[currentDesign]);
 }
 
 #ifdef SIMULATE_SENSOR
-// Erzeugt langsam schwankende Fantasiewerte, damit sich das Layout ohne
-// angeschlossenen BME680 am echten Display pruefen laesst. Die Luftqualitaet
-// durchlaeuft dabei bewusst alle drei Ampelstufen.
+// Produces slowly drifting fake values so the layout can be checked on the
+// real display without a BME680 attached. The air quality deliberately
+// cycles through all three status levels.
 void simulateReading(Readings &rd) {
   float t = millis() / 1000.0f;
   rd.tempC = 21.5f + 3.0f * sinf(t / 15.0f);
@@ -647,7 +645,7 @@ void measureAndShow() {
   simulateReading(rd);
 #else
   if (!bme.performReading()) {
-    Serial.println("BME680: Messung fehlgeschlagen");
+    Serial.println("BME680: reading failed");
     return;
   }
 
@@ -695,19 +693,19 @@ void setupPalette() {
 void setup() {
   Serial.begin(115200);
 
-  // Backlight einschalten
+  // Turn on the backlight.
   pinMode(TFT_BL, OUTPUT);
   digitalWrite(TFT_BL, HIGH);
 
   tft.init();
-  tft.setRotation(1); // 0-3, je nach gewuenschter Ausrichtung anpassen
+  tft.setRotation(1); // 0-3, adjust to the desired orientation
   setupPalette();
 
   touchSpi.begin(TOUCH_CLK, TOUCH_MISO, TOUCH_MOSI, TOUCH_CS);
   touch.begin(touchSpi);
-  touch.setRotation(1); // muss zur Display-Rotation passen
+  touch.setRotation(1); // must match the display rotation
 
-  // Zuletzt gewaehltes Design aus dem NVS laden.
+  // Load the last selected design from NVS.
   prefs.begin("cyd", false);
   currentDesign = prefs.getUChar("design", DESIGN_LCARS);
   if (currentDesign >= DESIGN_COUNT) {
@@ -717,7 +715,7 @@ void setup() {
   drawStaticLayout();
 
 #ifdef SIMULATE_SENSOR
-  Serial.printf("CYD Raumklima (SIMULATION, kein BME680 noetig) laeuft. Design: %s\n",
+  Serial.printf("CYD room climate (SIMULATION, no BME680 needed) running. Design: %s\n",
                 DESIGN_NAMES[currentDesign]);
 #else
   Wire.begin(I2C_SDA, I2C_SCL);
@@ -726,7 +724,7 @@ void setup() {
     tft.setFreeFont(&FreeSansBold12pt7b);
     tft.setTextColor(COL_WARN, COL_BG);
     tft.drawString("BME680 NICHT GEFUNDEN", 10, 220);
-    Serial.println("BME680 nicht gefunden - Verkabelung pruefen (SDA=27, SCL=22)");
+    Serial.println("BME680 not found - check wiring (SDA=27, SCL=22)");
     while (true) {
       delay(1000);
     }
@@ -736,26 +734,26 @@ void setup() {
   bme.setHumidityOversampling(BME680_OS_2X);
   bme.setPressureOversampling(BME680_OS_4X);
   bme.setIIRFilterSize(BME680_FILTER_SIZE_3);
-  bme.setGasHeater(320, 150); // Heizplatte: 320 C fuer 150 ms
+  bme.setGasHeater(320, 150); // heater plate: 320 C for 150 ms
 
-  Serial.printf("CYD Raumklima-Messung laeuft. Design: %s\n",
+  Serial.printf("CYD room climate measurement running. Design: %s\n",
                 DESIGN_NAMES[currentDesign]);
 #endif
 }
 
 void loop() {
-  // Tippen auf die rechte Displayhaelfte wechselt zum naechsten Design,
-  // auf die linke Haelfte zum vorherigen. p.x ist dank touch.setRotation(1)
-  // die Querachse des Displays (als Rohwert, daher Vergleich mit der
-  // Bereichsmitte statt mit Pixeln).
+  // Tapping the right half of the display switches to the next design,
+  // tapping the left half to the previous one. Thanks to
+  // touch.setRotation(1), p.x is the display's horizontal axis (as a raw
+  // value, hence the comparison against the range midpoint, not pixels).
   if (touch.touched()) {
     TS_Point p = touch.getPoint();
     switchDesign(p.x >= TOUCH_RAW_MID ? +1 : -1);
-    // Warten bis der Finger wieder weg ist, sonst rattern die Designs durch.
+    // Wait until the finger is lifted, otherwise designs would rattle through.
     while (touch.touched()) {
       delay(10);
     }
-    delay(150); // Entprellen
+    delay(150); // debounce
     return;
   }
 
