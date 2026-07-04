@@ -108,6 +108,36 @@ against the silkscreen on the board):
   `platformio.ini` and reflash: the badge switches from "SIM" to "LIVE"
   and real readings are shown.
 
+## Settings on the microSD card
+
+If a microSD card (FAT32) is inserted, the firmware stores its settings in
+`/settings.txt` on the card:
+
+- **At boot** the file is read and overrides the defaults (and the design
+  stored in NVS). If a card is present but has no settings file yet, a
+  self-documenting template is created automatically.
+- **On every design change** the file is rewritten, so the card always
+  reflects the current state.
+- **Without a card** everything works as before; the selected design then
+  persists in NVS only.
+
+Available keys (unknown keys and out-of-range values are ignored):
+
+| Key | Values | Meaning |
+|-----|--------|---------|
+| `design` | `lcars`, `tiles`, `terminal`, `bauhaus` | Active design |
+| `interval_ms` | 500-3600000 | Measurement interval in milliseconds |
+| `touch_swap` | 0 or 1 | Swaps the left/right tap direction |
+| `gas_good_kohm` | > 0 | Air quality "good" threshold (gas resistance) |
+| `gas_moderate_kohm` | > 0 | Air quality "medium" threshold |
+
+To change settings from a PC, edit `/settings.txt` on the card and reboot
+the device (settings are only read at startup).
+
+Technical note: the SD slot (CS=5, SCK=18, MISO=19, MOSI=23) shares SPI
+usage with the touch controller; the firmware re-points the bus to the SD
+pins for each card access and back to the touch pins afterwards.
+
 ## Note on air quality
 
 The good/medium/poor rating is a simple threshold classification of the raw
