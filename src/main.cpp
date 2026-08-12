@@ -735,11 +735,21 @@ void setup() {
     }
   }
 
-  bme.setTemperatureOversampling(BME680_OS_8X);
-  bme.setHumidityOversampling(BME680_OS_2X);
-  bme.setPressureOversampling(BME680_OS_4X);
-  bme.setIIRFilterSize(BME680_FILTER_SIZE_3);
-  bme.setGasHeater(320, 150); // heater plate: 320 C for 150 ms
+  if (!bme.setTemperatureOversampling(BME680_OS_8X)) {
+    Serial.println("BME680: temperature oversampling config failed");
+  }
+  if (!bme.setHumidityOversampling(BME680_OS_2X)) {
+    Serial.println("BME680: humidity oversampling config failed");
+  }
+  if (!bme.setPressureOversampling(BME680_OS_4X)) {
+    Serial.println("BME680: pressure oversampling config failed");
+  }
+  if (!bme.setIIRFilterSize(BME680_FILTER_SIZE_3)) {
+    Serial.println("BME680: IIR filter config failed");
+  }
+  if (!bme.setGasHeater(320, 150)) { // heater plate: 320 C for 150 ms
+    Serial.println("BME680: gas heater config failed");
+  }
 
   Serial.printf("CYD room climate measurement running. Design: %s\n",
                 DESIGN_NAMES[currentDesign]);
