@@ -90,17 +90,20 @@ uint16_t humidityColor(float humidity) {
   return COL_COOL;
 }
 
+enum AqLevel { AQ_GOOD, AQ_MID, AQ_BAD };
+
+AqLevel airQualityLevel(float gasKOhm) {
+  if (gasKOhm >= GAS_GOOD_KOHM) return AQ_GOOD;
+  if (gasKOhm >= GAS_MODERATE_KOHM) return AQ_MID;
+  return AQ_BAD;
+}
+
 const char *airQualityLabel(float gasKOhm, uint16_t &color) {
-  if (gasKOhm >= GAS_GOOD_KOHM) {
-    color = COL_AQ_GOOD;
-    return "GUT";
+  switch (airQualityLevel(gasKOhm)) {
+    case AQ_GOOD: color = COL_AQ_GOOD; return "GUT";
+    case AQ_MID: color = COL_AQ_MID; return "MITTEL";
+    default: color = COL_AQ_BAD; return "SCHLECHT";
   }
-  if (gasKOhm >= GAS_MODERATE_KOHM) {
-    color = COL_AQ_MID;
-    return "MITTEL";
-  }
-  color = COL_AQ_BAD;
-  return "SCHLECHT";
 }
 
 // A bare "C" would be the wrong unit - "C" is not "degrees Celsius".
@@ -461,9 +464,11 @@ BauCell bauAQ = {162, 140, 158, 100};
 // Air-quality status color from the fixed primary palette:
 // blue=good, yellow=medium, red=poor.
 uint16_t bauhausAqColor(float gasKOhm) {
-  if (gasKOhm >= GAS_GOOD_KOHM) return COL_BAU_BLUE;
-  if (gasKOhm >= GAS_MODERATE_KOHM) return COL_BAU_YELLOW;
-  return COL_BAU_RED;
+  switch (airQualityLevel(gasKOhm)) {
+    case AQ_GOOD: return COL_BAU_BLUE;
+    case AQ_MID: return COL_BAU_YELLOW;
+    default: return COL_BAU_RED;
+  }
 }
 
 // Half circle with the flat side down - the fourth element of the shape
