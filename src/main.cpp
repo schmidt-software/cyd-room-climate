@@ -755,7 +755,14 @@ void loop() {
     TS_Point p = touch.getPoint();
     switchDesign(p.x >= TOUCH_RAW_MID ? +1 : -1);
     // Wait until the finger is lifted, otherwise designs would rattle through.
+    // Bounded so a stuck-low IRQ line (bad solder joint, dust, ESD) can't
+    // freeze the whole device forever.
+    unsigned long waitStart = millis();
     while (touch.touched()) {
+      if (millis() - waitStart > 3000) {
+        Serial.println("Touch IRQ stuck low past timeout, continuing anyway.");
+        break;
+      }
       delay(10);
     }
     delay(150); // debounce
